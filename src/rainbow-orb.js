@@ -763,6 +763,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 
     // Click handling
     const raycaster = new THREE.Raycaster();
+    raycaster.params.Line.threshold = 0.1; // Increase threshold for easier targeting
     const mouse = new THREE.Vector2();
     let highlightedNode = null;
 
@@ -793,6 +794,74 @@ const controls = new OrbitControls(camera, renderer.domElement);
         }
     });
 
+    // Game state
+    let isGameActive = false;
+    let gameScore = 0;
+    let gameTimer = 30;
+    let gameInterval;
+    let lastClickPosition = null;
+    let multiplier = 1;
+    
+    // Add multiplier display
+    const multiplierDisplay = document.createElement('div');
+    multiplierDisplay.style.position = 'fixed';
+    multiplierDisplay.style.top = '80px';
+    multiplierDisplay.style.right = '20px';
+    multiplierDisplay.style.padding = '10px 20px';
+    multiplierDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    multiplierDisplay.style.color = '#ffd700';
+    multiplierDisplay.style.borderRadius = '4px';
+    multiplierDisplay.style.fontSize = '20px';
+    multiplierDisplay.style.fontWeight = 'bold';
+    multiplierDisplay.style.textShadow = '0 0 10px rgba(255, 215, 0, 0.5)';
+    multiplierDisplay.style.zIndex = '1000';
+    multiplierDisplay.textContent = 'x1';
+    document.body.appendChild(multiplierDisplay);
+
+    // Function to calculate multiplier based on distance
+    function calculateMultiplier(pos1, pos2) {
+        if (!pos1 || !pos2) return 1;
+        const distance = pos1.distanceTo(pos2);
+        // Convert distance to multiplier (further = higher multiplier)
+        // radius * 0.5 = 2x multiplier
+        // radius * 1.0 = 3x multiplier
+        // radius * 1.5 = 4x multiplier
+        // radius * 2.0 = 5x multiplier (max)
+        const normalizedDistance = distance / radius;
+        const multiplier = Math.min(1 + Math.floor(normalizedDistance * 2), 5);
+        return multiplier;
+    }
+
+    // Start game function
+    function startGame() {
+        // Reset game state
+        isGameActive = true;
+        gameScore = 0;
+        gameTimer = 30;
+        lastClickPosition = null;
+        multiplier = 1;
+        scoreDisplay.textContent = 'Score: 0';
+        timerDisplay.textContent = 'Time: 30s';
+        multiplierDisplay.textContent = 'x1';
+        
+        // Disable start button during game
+        startButton.disabled = true;
+        startButton.style.backgroundColor = '#666';
+        
+        // Reset the orb
+        regenerateShape();
+        
+        // Start timer
+        gameInterval = setInterval(() => {
+            gameTimer--;
+            timerDisplay.textContent = `Time: ${gameTimer}s`;
+            
+            if (gameTimer <= 0) {
+                endGame();
+            }
+        }, 1000);
+    }
+
     // Simple click to delete and score
     window.addEventListener('click', (event) => {
         if (!isGameActive || event.shiftKey) return; // Only process clicks during game and not shift+clicks
@@ -804,21 +873,35 @@ const controls = new OrbitControls(camera, renderer.domElement);
         const intersects = raycaster.intersectObjects(lightGroup.children.filter(obj => obj instanceof THREE.Mesh));
 
         if (intersects.length > 0) {
-            // Update score first
-            gameScore++;
-            scoreDisplay.textContent = `Score: ${gameScore}`;
+            const selectedSphere = intersects[0].object;
+            const spherePos = selectedSphere.position.clone();
 
-            // Show score popup
+            // Calculate multiplier based on distance from last click
+            multiplier = calculateMultiplier(lastClickPosition, spherePos);
+            lastClickPosition = spherePos;
+            
+            // Update score with multiplier
+            const points = multiplier;
+            gameScore += points;
+            scoreDisplay.textContent = `Score: ${gameScore}`;
+            multiplierDisplay.textContent = `x${multiplier}`;
+            multiplierDisplay.style.transform = 'scale(1.2)';
+            setTimeout(() => {
+                multiplierDisplay.style.transform = 'scale(1)';
+            }, 200);
+
+            // Show score popup with multiplier
             const scorePopup = document.createElement('div');
-            scorePopup.textContent = '+1';
+            scorePopup.textContent = multiplier > 1 ? `+${points} (x${multiplier})` : '+1';
             scorePopup.style.position = 'fixed';
             scorePopup.style.left = `${event.clientX}px`;
             scorePopup.style.top = `${event.clientY}px`;
-            scorePopup.style.color = '#4facfe';
+            scorePopup.style.color = multiplier > 1 ? '#ffd700' : '#4facfe';
             scorePopup.style.fontSize = '24px';
             scorePopup.style.fontWeight = 'bold';
             scorePopup.style.pointerEvents = 'none';
             scorePopup.style.transition = 'all 0.5s ease-out';
+            scorePopup.style.textShadow = multiplier > 1 ? '0 0 10px rgba(255, 215, 0, 0.5)' : 'none';
             document.body.appendChild(scorePopup);
 
             // Animate score popup
@@ -831,10 +914,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
             }, 500);
 
             // Handle node removal
-            const selectedSphere = intersects[0].object;
-            const spherePos = selectedSphere.position;
             const line = selectedSphere.userData.line;
-            
             lightGroup.remove(selectedSphere);
             if (line) lightGroup.remove(line);
 
@@ -1375,7 +1455,7 @@ animate();
 
     // Timer display
     const timerDisplay = document.createElement('div');
-    timerDisplay.textContent = 'Time: 20s';
+    timerDisplay.textContent = 'Time: 30s';
     timerDisplay.style.fontSize = '24px';
     gameUI.appendChild(timerDisplay);
 
@@ -1385,29 +1465,6 @@ animate();
     highScoreDisplay.textContent = `High Score: ${highScore}`;
     highScoreDisplay.style.fontSize = '16px';
     gameUI.appendChild(highScoreDisplay);
-
-    // Game state
-    let isGameActive = false;
-    let gameScore = 0;
-    let gameTimer = 20;
-    let gameInterval;
-
-    // Function to save screenshot with score
-    function saveGameResult() {
-        const date = new Date();
-        const timestamp = `${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2,'0')}${date.getDate().toString().padStart(2,'0')}-${date.getHours().toString().padStart(2,'0')}${date.getMinutes().toString().padStart(2,'0')}${date.getSeconds().toString().padStart(2,'0')}`;
-        
-        // Render the scene
-        renderer.render(scene, camera);
-        
-        // Create a link element
-        const link = document.createElement('a');
-        link.download = `orb-score${gameScore}-${timestamp}.png`;
-        
-        // Convert the canvas to a data URL and trigger download
-        link.href = renderer.domElement.toDataURL('image/png');
-        link.click();
-    }
 
     // Game end function
     function endGame() {
@@ -1448,31 +1505,21 @@ animate();
         }, 3000);
     }
 
-    // Start game function
-    function startGame() {
-        // Reset game state
-        isGameActive = true;
-        gameScore = 0;
-        gameTimer = 20;
-        scoreDisplay.textContent = 'Score: 0';
-        timerDisplay.textContent = 'Time: 20s';
+    // Function to save screenshot with score
+    function saveGameResult() {
+        const date = new Date();
+        const timestamp = `${date.getFullYear()}${(date.getMonth()+1).toString().padStart(2,'0')}${date.getDate().toString().padStart(2,'0')}-${date.getHours().toString().padStart(2,'0')}${date.getMinutes().toString().padStart(2,'0')}${date.getSeconds().toString().padStart(2,'0')}`;
         
-        // Disable start button during game
-        startButton.disabled = true;
-        startButton.style.backgroundColor = '#666';
+        // Render the scene
+        renderer.render(scene, camera);
         
-        // Reset the orb
-        regenerateShape();
+        // Create a link element
+        const link = document.createElement('a');
+        link.download = `orb-score${gameScore}-${timestamp}.png`;
         
-        // Start timer
-        gameInterval = setInterval(() => {
-            gameTimer--;
-            timerDisplay.textContent = `Time: ${gameTimer}s`;
-            
-            if (gameTimer <= 0) {
-                endGame();
-            }
-        }, 1000);
+        // Convert the canvas to a data URL and trigger download
+        link.href = renderer.domElement.toDataURL('image/png');
+        link.click();
     }
 
     // Add click handler for start button
