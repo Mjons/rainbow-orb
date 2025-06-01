@@ -763,9 +763,41 @@ const controls = new OrbitControls(camera, renderer.domElement);
 
     // Click handling
     const raycaster = new THREE.Raycaster();
+    raycaster.params.Line.threshold = 0.1; // Increase threshold for easier targeting
     const mouse = new THREE.Vector2();
+    let highlightedNode = null;
 
+    // Track mouse position for hover effect
+    window.addEventListener('mousemove', (event) => {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(lightGroup.children.filter(obj => obj instanceof THREE.Mesh));
+
+        // Reset previously highlighted node
+        if (highlightedNode) {
+            highlightedNode.material.opacity = 0.85;
+            highlightedNode.scale.set(1, 1, 1);
+        }
+
+        // Highlight new node
+        if (intersects.length > 0) {
+            const node = intersects[0].object;
+            node.material.opacity = 1;
+            node.scale.set(1.5, 1.5, 1.5);
+            highlightedNode = node;
+            document.body.style.cursor = 'pointer';
+        } else {
+            highlightedNode = null;
+            document.body.style.cursor = 'default';
+        }
+    });
+
+    // Simple click to delete
     window.addEventListener('click', (event) => {
+        if (event.shiftKey) return; // Let shift+drag handling take care of this
+
         mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
@@ -780,7 +812,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
             lightGroup.remove(selectedSphere);
             if (line) lightGroup.remove(line);
 
-            const breakRadius = radius * 0.15; // Match the new break radius
+            const breakRadius = radius * 0.15;
             triangles.forEach(triangle => {
                 if (!triangle.userData.broken) {
                     const distance = spherePos.distanceTo(triangle.userData.center);
@@ -789,7 +821,20 @@ const controls = new OrbitControls(camera, renderer.domElement);
                     }
                 }
             });
+
+            highlightedNode = null;
+            document.body.style.cursor = 'default';
         }
+    });
+
+    // Reset cursor when mouse leaves window
+    window.addEventListener('mouseleave', () => {
+        if (highlightedNode) {
+            highlightedNode.material.opacity = 0.85;
+            highlightedNode.scale.set(1, 1, 1);
+            highlightedNode = null;
+        }
+        document.body.style.cursor = 'default';
     });
 
     // Batch deletion with Shift+Drag
